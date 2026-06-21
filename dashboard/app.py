@@ -1,6 +1,15 @@
 import os
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import plotly.express as px
+
+st.set_page_config(
+    page_title="Thales Smart Factory Dashboard",
+    layout="wide"
+)
+
+st.title("🏭 6G-Enabled Smart Factory Dashboard")
+st.markdown("Manufacturing Process Health and Operational Efficiency Analysis")
 
 @st.cache_data
 def load_data():
@@ -9,36 +18,21 @@ def load_data():
 
     df = pd.read_csv(csv_path)
 
-    return df
+    df["Date"] = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
+    df["Timestamp"] = pd.to_datetime(df["Timestamp"], dayfirst=True, errors="coerce")
 
-@st.cache_data
-def load_data():
-    df = pd.read_csv("Thales_Group_Manufacturing.csv")
-
-    df["Date"] = pd.to_datetime(
-        df["Date"],
-        dayfirst=True,
-        errors="coerce"
-    )
-
-    df["Timestamp"] = pd.to_datetime(
-        df["Timestamp"],
-        dayfirst=True,
-        errors="coerce"
-    )
-    
     df["Machine_Health_Index"] = (
         100
         - (df["Temperature_C"] / df["Temperature_C"].max()) * 30
         - (df["Vibration_Hz"] / df["Vibration_Hz"].max()) * 30
         - (df["Power_Consumption_kW"] / df["Power_Consumption_kW"].max()) * 40
     )
-    
+
     df["Defect_Density_Score"] = (
         df["Quality_Control_Defect_Rate_%"] /
         df["Production_Speed_units_per_hr"]
     )
-    
+
     df["Error_Frequency_Index"] = df["Error_Rate_%"]
 
     return df
@@ -55,9 +49,6 @@ selected_machine = st.sidebar.selectbox(
 )
 
 mode_options = ["All"] + sorted(df["Operation_Mode"].dropna().unique().tolist())
-selected_mode = st.sidebar.selectbox("Select Operation Mode", mode_options)
-
-mode_options = ["All"] + sorted(df["Operation_Mode"].dropna().unique().tolist())
 selected_mode = st.sidebar.selectbox(
     "Select Operation Mode",
     mode_options,
@@ -66,12 +57,14 @@ selected_mode = st.sidebar.selectbox(
 
 start_date = st.sidebar.date_input(
     "Start Date",
-    df["Date"].min().date()
+    df["Date"].min().date(),
+    key="start_date_filter"
 )
 
 end_date = st.sidebar.date_input(
     "End Date",
-    df["Date"].max().date()
+    df["Date"].max().date(),
+    key="end_date_filter"
 )
 
 df_filtered = df.copy()
@@ -98,7 +91,7 @@ with tab1:
     st.subheader("Factory Health Overview")
 
     col1, col2, col3, col4, col5 = st.columns(5)
-    
+
     col1.metric("Total Records", len(df_filtered))
     col2.metric("Machine Health Index", round(df_filtered["Machine_Health_Index"].mean(), 2))
     col3.metric("Avg Production Speed", round(df_filtered["Production_Speed_units_per_hr"].mean(), 2))
@@ -124,14 +117,17 @@ with tab2:
         "Temperature_C": "mean",
         "Vibration_Hz": "mean",
         "Power_Consumption_kW": "mean",
-        "Predictive_Maintenance_Score": "mean"
+        "Predictive_Maintenance_Score": "mean",
+        "Machine_Health_Index": "mean"
     }).reset_index()
 
+    top_hot = machine_health.sort_values("Temperature_C", ascending=False).head(10)
+
     fig_temp = px.bar(
-        machine_health,
+        top_hot,
         x="Machine_ID",
         y="Temperature_C",
-        title="Average Temperature by Machine"
+        title="Top 10 Hottest Machines"
     )
     st.plotly_chart(fig_temp, use_container_width=True)
 
@@ -148,6 +144,11 @@ with tab2:
 with tab3:
     st.subheader("Production & Quality Panel")
 
+    sample_df = df_filtered.sample(
+        min(5000, len(df_filtered)),
+        random_state=42
+    )
+
     col1, col2 = st.columns(2)
 
     with col1:
@@ -160,23 +161,18 @@ with tab3:
         )
         st.plotly_chart(fig_prod, use_container_width=True)
 
-    sample_df = df_filtered.sample(
-        min(5000, len(df_filtered)),
-        random_state=42
-    )
-
-    fig_defect = px.scatter(
-        sample_df,
-        x="Temperature_C",
-        y="Quality_Control_Defect_Rate_%",
-        color="Efficiency_Status",
-        title="Temperature vs Defect Rate"
-    )
-    
-    st.plotly_chart(fig_defect, use_container_width=True)
+    with col2:
+        fig_defect = px.scatter(
+            sample_df,
+            x="Temperature_C",
+            y="Quality_Control_Defect_Rate_%",
+            color="Efficiency_Status",
+            title="Temperature vs Defect Rate"
+        )
+        st.plotly_chart(fig_defect, use_container_width=True)
 
     fig_error = px.scatter(
-        df_filtered,
+        sample_df,
         x="Vibration_Hz",
         y="Error_Rate_%",
         color="Efficiency_Status",
@@ -216,7 +212,7 @@ with tab4:
     st.plotly_chart(fig_machine_eff, use_container_width=True)
 
     st.markdown("### Underperforming Machines")
-    
+
     bottom_machines = (
         df_filtered.groupby("Machine_ID")["Production_Speed_units_per_hr"]
         .mean()
@@ -224,18 +220,18 @@ with tab4:
         .head(10)
         .reset_index()
     )
-    
+
     fig_bottom = px.bar(
         bottom_machines,
         x="Machine_ID",
         y="Production_Speed_units_per_hr",
         title="Bottom 10 Machines by Production Speed"
     )
-    
+
     st.plotly_chart(fig_bottom, use_container_width=True)
 
     st.markdown("### Quality Bottleneck Machines")
-    
+
     defect_machines = (
         df_filtered.groupby("Machine_ID")["Quality_Control_Defect_Rate_%"]
         .mean()
@@ -243,14 +239,15 @@ with tab4:
         .head(10)
         .reset_index()
     )
-    
+
     fig_defect_rank = px.bar(
         defect_machines,
         x="Machine_ID",
         y="Quality_Control_Defect_Rate_%",
         title="Top 10 Machines by Defect Rate"
     )
-    
+
     st.plotly_chart(fig_defect_rank, use_container_width=True)
-    
+
+    st.markdown("### Sample Filtered Data")
     st.dataframe(df_filtered.head(50))
