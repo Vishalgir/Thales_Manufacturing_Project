@@ -1,14 +1,15 @@
-import streamlit as st
+iimport os
 import pandas as pd
-import plotly.express as px
+import streamlit as st
 
-st.set_page_config(
-    page_title="Thales Smart Factory Dashboard",
-    layout="wide"
-)
+@st.cache_data
+def load_data():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_path = os.path.join(current_dir, "Thales_Group_Manufacturing.csv")
 
-st.title("🏭 6G-Enabled Smart Factory Dashboard")
-st.markdown("Manufacturing Process Health and Operational Efficiency Analysis")
+    df = pd.read_csv(csv_path)
+
+    return df
 
 @st.cache_data
 def load_data():
